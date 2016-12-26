@@ -2,12 +2,16 @@ const pg = require('pg');
 const Promise = require("bluebird");
 const _ = require("lodash");
 const mongoose = require('mongoose');
+mongoose.Promise = Promise;
 const Schema = mongoose.Schema;
 
 const postSchema = new Schema({
   id: String,
   text: String,
-  timestamp: Number,
+  timestamp: {
+    type: Number,
+    index: true
+  },
   user_id: Number
 });
 
@@ -105,6 +109,23 @@ class Connect {
       mongo: this._prepareMongo()
     });
   }
+
+  queryMongo() {
+    return Post.find({})
+      .limit(1000)
+      .sort('timestamp');
+  }
+
+  queryPg() {
+    return new Promise((resolve, reject) => {
+        this._pg.query(`SELECT * FROM posts ORDER BY timestamp DESC LIMIT 1000`, (err, result) => {
+          if (err) reject(new Error(err));
+          resolve(result);
+        });
+      })
+      .then(res => res.rows);
+  }
+
 }
 
 let c = new Connect();
