@@ -13,6 +13,7 @@
   "author": "V.",
   "license": "ISC",
   "dependencies": {
+    "benchmark": "^2.1.3",
     "bluebird": "^3.4.7",
     "data-filler": "git+https://github.com/artificial-life/data-filler.git",
     "lodash": "^4.17.3",

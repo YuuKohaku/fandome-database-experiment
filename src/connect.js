@@ -12,7 +12,8 @@ const postSchema = new Schema({
     type: Number,
     index: true
   },
-  user_id: Number
+  user_id: Number,
+  group_id: Number,
 });
 
 const userSchema = new Schema({
@@ -23,6 +24,28 @@ const userSchema = new Schema({
 
 const Post = mongoose.model('Post', postSchema);
 const User = mongoose.model('User', userSchema);
+
+
+let count = 1000000;
+
+function runAll(x, counter, cb) {
+  counter++
+  return runTen(x, cb)
+    .then(d => counter * 50 < count ? setImmediate(runAll.bind(this, x, counter, cb)) : true);
+}
+
+function runTen(x, callback) {
+  let result = [];
+  for (var i = 0; i < 50; i++) {
+    let v = x.next();
+    let value = v.value;
+    let done = v.done;
+    result.push(callback(value))
+  }
+
+  return Promise.all(result);
+}
+
 
 class Connect {
   constructor() {
@@ -69,29 +92,44 @@ class Connect {
   }
 
   _insertPg(data) {
-    return Promise.map(data.user(1000), user_data => this._insertPgSingle('users', user_data), {
+    let cPost = data.post;
+    let post = new cPost();
+
+    post.groups(1000)
+      .count(count)
+      .wordsCount(100)
+      .users(100000);
+
+    var x = post[Symbol.iterator]();
+
+    return Promise.map(data.user(100000), user_data => this._insertPgSingle('users', user_data), {
         concurrency: 50
       })
-      .then(() => Promise.map(data.post(), post_data => this._insertPgSingle('posts', post_data), {
-        concurrency: 30
-      }));
+      .then(() => runAll(x, 0, post_data => this._insertPgSingle('posts', post_data)));
   }
 
   _insertMongo(data) {
-    return Promise.map(data.user(1000), user_data => (new User(user_data))
+    let cPost = data.post;
+    let post = new cPost();
+
+    post.groups(1000)
+      .count(count)
+      .wordsCount(100)
+      .users(100000);
+
+    var x = post[Symbol.iterator]();
+    return Promise.map(data.user(100000), user_data => (new User(user_data))
         .save(), {
           concurrency: 50
         })
-      .then(() => Promise.map(data.post(), post_data => (new Post(post_data))
-        .save(), {
-          concurrency: 30
-        }));
+      .then(() => runAll(x, 0, post_data => (new Post(post_data))
+        .save()));
   }
 
   insert(data) {
     return Promise.props({
       pg: this._insertPg(data),
-      mongo: this._insertMongo(data)
+      // mongo: this._insertMongo(data)
     });
   }
 
@@ -111,14 +149,40 @@ class Connect {
   }
 
   queryMongo() {
-    return Post.find({})
-      .limit(1000)
-      .sort('timestamp');
+    // let offset = _.random(100, 10000);
+    let grp = _.random(0, 2);
+    return Post.find({
+        group_id: grp
+      })
+      .lean()
+      // .skip(offset)
+      .limit(10)
+      .sort('-timestamp')
+      .then((res) => {
+        // console.log(res);
+        let usr = _.uniq(_.flatMap(res, 'user_id'));
+        return User.find({
+            id: {
+              $in: usr
+            }
+          })
+          .lean()
+          .then((users) => {
+            let u = _.keyBy(users, 'id');
+            _.forEach(res, (entry) => {
+              entry.user = u[entry.user_id];
+              return entry;
+            });
+            return res;
+          });
+      });
   }
 
   queryPg() {
+    // let offset = _.random(100, 10000);OFFSET ${offset}
+    let grp = _.random(0, 2);
     return new Promise((resolve, reject) => {
-        this._pg.query(`SELECT * FROM posts ORDER BY timestamp DESC LIMIT 1000`, (err, result) => {
+        this._pg.query(`SELECT posts.id, posts.text, posts.timestamp, users.id, users.name, users.pic FROM posts  INNER JOIN users ON posts.user_id = users.id WHERE posts.group_id = ${grp} ORDER BY posts.timestamp DESC LIMIT 10`, (err, result) => {
           if (err) reject(new Error(err));
           resolve(result);
         });

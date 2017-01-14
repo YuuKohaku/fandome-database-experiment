@@ -1,4 +1,6 @@
 const c = require("./connect.js");
+const Benchmark = require("benchmark");
+var suite = new Benchmark.Suite;
 
 let time, diff;
 
@@ -15,17 +17,33 @@ c.establish({
     mongo: 'mongodb://localhost:27017/test'
   })
   .then((res) => {
-    time = process.hrtime();
-    return c.queryMongo();
-  })
-  .then((res) => {
-    diff = process.hrtime(time);
-    console.log(`Mongo took ${diff[0] + diff[1]/1e9} seconds`);
-    time = process.hrtime();
-    return c.queryPg();
-  })
-  .then(res => {
-    diff = process.hrtime(time);
-    console.log(`Pg took ${diff[0] + diff[1]/1e9} seconds`);
-    // console.log(res);
+
+
+    // add tests
+    suite
+      .add('mng', {
+        'defer': true,
+        'fn': function(deferred) {
+          c.queryMongo()
+            .then(() => deferred.resolve())
+        }
+      })
+      .add('pg', {
+        'defer': true,
+        'fn': function(deferred) {
+          c.queryPg()
+            .then(() => deferred.resolve())
+        }
+      })
+      .on('cycle', function(event) {
+        console.log(String(event.target));
+      })
+      .on('complete', function() {
+        console.log('Fastest is ' + this.filter('fastest')
+          .map('name'));
+      })
+      .run({
+        'async': true
+      });
+
   });
